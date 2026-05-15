@@ -1,0 +1,41 @@
+{
+  "name": "pi-theme-switcher",
+  "version": "1.0.0",
+  "description": "Pi extension that automatically sets the theme to dark or light based on env vars, THEME_MODE, or time of day.",
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx ./tests/theme-switcher.test.ts",
+    "check": "npm run typecheck && npm run test"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "theme",
+    "dark-mode",
+    "light-mode"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
