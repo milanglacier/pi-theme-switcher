@@ -12,26 +12,29 @@ pi install npm:pi-theme-switcher
 
 On session start, the extension evaluates the theme in this order:
 
-1. **`PI_AGENT_THEME`** or **`THEME_MODE`** environment variable
-2. **Time of day** — fallback to dark/light based on system clock (configurable window)
+1. **`PI_AGENT_THEME`** — set to `"dark"` or `"light"` to force a theme
+2. **`THEME_MODE`** — set to `"night"` (dark) or `"day"` (light)
+3. **Time of day** — fallback to dark/light based on system clock (configurable window)
 
 The extension polls every 60 seconds to handle time-based transitions during long sessions.
 
 ## Configuration
 
-Create a config file at `~/.pi/agent/theme-switcher.json` (global) or `.pi/theme-switcher.json` (project-local):
+Create a config file at `~/.pi/agent/theme-switcher.json` (global) or `.pi/agent/theme-switcher.json` (project-local):
 
 ```json
 {
-  "darkStart": 18,
-  "darkEnd": 6
+  "nightStart": 22,
+  "nightEnd": 6
 }
 ```
 
-- `darkStart` (default: `23`, 11 PM) — hour to switch to dark mode
-- `darkEnd` (default: `7`, 7 AM) — hour to switch to light mode
+- `nightStart` (default: `23`, 11 PM) — hour to switch to dark mode
+- `nightEnd` (default: `7`, 7 AM) — hour to switch to light mode
 
-Project config overrides global config.
+When `nightStart > nightEnd` (e.g., 22–6) the night range wraps around midnight. When `nightStart <= nightEnd` (e.g., 0–5), it does not.
+
+Project config overrides global config on a per-field basis.
 
 ## License
 
