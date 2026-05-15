@@ -7,6 +7,17 @@
   "exports": {
     ".": "./index.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/milanglacier/pi-theme-switcher.git"
+  },
+  "homepage": "https://github.com/milanglacier/pi-theme-switcher",
+  "bugs": {
+    "url": "https://github.com/milanglacier/pi-theme-switcher/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "index.ts",
     "src",
