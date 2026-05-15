@@ -10,10 +10,9 @@ import {
   getGlobalConfigPath,
   getProjectConfigPath,
   resolveConfig,
-  type ResolvedConfig,
 } from "../src/config.js";
 import { isInNightRange, resolveTheme } from "../src/theme.js";
-import type { ResolvedThemeSwitcherConfig, ThemeSwitcherConfig } from "../src/types.js";
+import type { ThemeSwitcherConfig } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
 // Test runner
@@ -114,7 +113,7 @@ await runTest("isInNightRange: full-day range (0-23)", () => {
 // Unit: resolveTheme
 // ---------------------------------------------------------------------------
 
-const defaultConfig: ResolvedThemeSwitcherConfig = { nightStart: 23, nightEnd: 7 };
+const defaultConfig: ThemeSwitcherConfig = { nightStart: 23, nightEnd: 7 };
 
 await runTest("resolveTheme: PI_AGENT_THEME=dark takes highest precedence", () => {
   withEnv({ PI_AGENT_THEME: "dark", THEME_MODE: "day" }, () => {
@@ -193,7 +192,7 @@ await runTest("resolveTheme: time-based with default config (23-7)", () => {
 
 await runTest("resolveTheme: time-based with custom non-wrapping range (0-5)", () => {
   withEnv({ PI_AGENT_THEME: undefined, THEME_MODE: undefined }, () => {
-    const config: ResolvedThemeSwitcherConfig = { nightStart: 0, nightEnd: 5 };
+    const config: ThemeSwitcherConfig = { nightStart: 0, nightEnd: 5 };
     assert.equal(resolveTheme(config, process.env, 0), "dark");
     assert.equal(resolveTheme(config, process.env, 5), "dark");
     assert.equal(resolveTheme(config, process.env, 6), "light");
@@ -226,17 +225,48 @@ await runTest("resolveConfig: loads global config", () => {
   });
 });
 
-await runTest("resolveConfig: project config overrides global for each field independently", () => {
+await runTest("resolveConfig: complete project config overrides global config", () => {
   withTempDir((dir) => {
     const globalPath = join(dir, "global.json");
     const projectPath = join(dir, "project.json");
     writeJson(globalPath, { nightStart: 22, nightEnd: 6 });
-    writeJson(projectPath, { nightStart: 21 });  // only override nightStart
+    writeJson(projectPath, { nightStart: 21, nightEnd: 5 });
 
     const result = resolveConfig(globalPath, projectPath);
 
-    assert.equal(result.nightStart, 21);   // from project
-    assert.equal(result.nightEnd, 6);      // from global (not overridden)
+    assert.equal(result.nightStart, 21);
+    assert.equal(result.nightEnd, 5);
+  });
+});
+
+await runTest("resolveConfig: partial project config is rejected and global config is used", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "global.json");
+    const projectPath = join(dir, "project.json");
+    writeJson(globalPath, { nightStart: 22, nightEnd: 6 });
+    writeJson(projectPath, { nightStart: 21 });
+
+    const warnings: string[] = [];
+    const result = resolveConfig(globalPath, projectPath, (msg) => warnings.push(msg));
+
+    assert.equal(result.nightStart, 22);
+    assert.equal(result.nightEnd, 6);
+    assert.ok(warnings.length > 0);
+    assert.match(warnings[0], /configured together/);
+  });
+});
+
+await runTest("resolveConfig: empty project config falls back to global config", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "global.json");
+    const projectPath = join(dir, "project.json");
+    writeJson(globalPath, { nightStart: 22, nightEnd: 6 });
+    writeJson(projectPath, {});
+
+    const result = resolveConfig(globalPath, projectPath);
+
+    assert.equal(result.nightStart, 22);
+    assert.equal(result.nightEnd, 6);
   });
 });
 
@@ -264,7 +294,7 @@ await runTest("resolveConfig: handles invalid JSON gracefully (warning callback)
     assert.equal(result.nightStart, 23);
     assert.equal(result.nightEnd, 7);
     assert.ok(warnings.length > 0);
-    assert.match(warnings[0], /Failed to parse/);
+    assert.match(warnings[0], /Failed to load/);
   });
 });
 
@@ -280,29 +310,6 @@ await runTest("resolveConfig: handles non-object JSON gracefully", () => {
     assert.equal(result.nightEnd, 7);
     assert.ok(warnings.length > 0);
     assert.match(warnings[0], /expected a JSON object/);
-  });
-});
-
-await runTest("resolveConfig: stamp changes when file changes", () => {
-  withTempDir((dir) => {
-    const globalPath = join(dir, "theme-switcher.json");
-    writeJson(globalPath, { nightStart: 20, nightEnd: 5 });
-
-    const first = resolveConfig(globalPath, null);
-    const firstStamp = first.stamp;
-
-    // Re-resolve without changes — same stamp
-    const second = resolveConfig(globalPath, null);
-    assert.equal(second.stamp, firstStamp);
-
-    // Update file — stamp should change
-    // Sleep briefly to ensure mtime changes (filesystem resolution)
-    const start = Date.now();
-    while (Date.now() - start < 10) { /* busy-wait for mtime granularity */ }
-    writeJson(globalPath, { nightStart: 21, nightEnd: 5 });
-
-    const third = resolveConfig(globalPath, null);
-    assert.notEqual(third.stamp, firstStamp);
   });
 });
 

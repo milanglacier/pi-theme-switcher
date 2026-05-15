@@ -32,9 +32,11 @@ Create a config file at `~/.pi/agent/theme-switcher.json` (global) or `.pi/agent
 - `nightStart` (default: `23`, 11 PM) — hour to switch to dark mode
 - `nightEnd` (default: `7`, 7 AM) — hour to switch to light mode
 
+Configure both fields together, or omit both to use defaults. A config with only one of these fields is ignored.
+
 When `nightStart > nightEnd` (e.g., 22–6) the night range wraps around midnight. When `nightStart <= nightEnd` (e.g., 0–5), it does not.
 
-Project config overrides global config on a per-field basis.
+Project config overrides global config when it provides both fields.
 
 ## License
 

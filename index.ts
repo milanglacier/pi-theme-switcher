@@ -4,41 +4,24 @@ import {
   getGlobalConfigPath,
   getProjectConfigPath,
   resolveConfig,
-  type ResolvedConfig,
 } from "./src/config.js";
 import { resolveTheme } from "./src/theme.js";
-import type { ResolvedTheme } from "./src/types.js";
+import type { ResolvedTheme, ThemeSwitcherContext } from "./src/types.js";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
-let cachedConfig: ResolvedConfig | null = null;
-let cachedCwd: string | undefined;
 let currentTheme: ResolvedTheme | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
-function loadConfig(cwd?: string): ResolvedConfig {
+function determineTheme(cwd?: string): ResolvedTheme {
   const globalPath = getGlobalConfigPath();
   const projectPath = cwd ? getProjectConfigPath(cwd) : null;
-
-  const resolved = resolveConfig(globalPath, projectPath);
-  const stamp = resolved.stamp;
-
-  if (cachedConfig && cachedCwd === cwd && cachedConfig.stamp === stamp) {
-    return cachedConfig;
-  }
-
-  cachedConfig = resolved;
-  cachedCwd = cwd;
-  return cachedConfig;
-}
-
-function determineTheme(cwd?: string): ResolvedTheme {
-  const config = loadConfig(cwd);
+  const config = resolveConfig(globalPath, projectPath);
   const hour = new Date().getHours();
   return resolveTheme(config, process.env, hour);
 }
 
-function applyTheme(ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1]): void {
+function applyTheme(ctx: ThemeSwitcherContext): void {
   const theme = determineTheme(ctx.cwd);
 
   if (theme !== currentTheme) {
@@ -69,7 +52,5 @@ export default function piThemeSwitcher(pi: ExtensionAPI): void {
       intervalId = null;
     }
     currentTheme = null;
-    cachedConfig = null;
-    cachedCwd = undefined;
   });
 }

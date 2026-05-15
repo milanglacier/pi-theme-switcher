@@ -1,4 +1,4 @@
-import type { ResolvedThemeSwitcherConfig } from "./types.js";
+import type { ThemeSwitcherConfig } from "./types.js";
 
 /**
  * Determines whether a given hour falls within the configured night range.
@@ -24,7 +24,7 @@ export function isInNightRange(
  *   3. Time-based check against configurable [nightStart, nightEnd]
  */
 export function resolveTheme(
-  config: ResolvedThemeSwitcherConfig,
+  config: ThemeSwitcherConfig,
   env: NodeJS.ProcessEnv,
   hour: number,
 ): "dark" | "light" {
