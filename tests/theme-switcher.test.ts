@@ -460,6 +460,95 @@ await runTest("extension: does not call setTheme if theme hasn't changed on re-e
   });
 });
 
+await runTest("extension: polling does not read captured ctx after it becomes stale", () => {
+  withEnv({ PI_AGENT_THEME: "dark", THEME_MODE: undefined }, () => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+
+    let intervalCallback: (() => void) | null = null;
+    type FakeInterval = {
+      cleared: boolean;
+      unref(): FakeInterval;
+    };
+    const fakeInterval: FakeInterval = {
+      cleared: false,
+      unref(): FakeInterval {
+        return this;
+      },
+    };
+
+    try {
+      globalThis.setInterval = ((callback: () => void) => {
+        intervalCallback = callback;
+        return fakeInterval;
+      }) as unknown as typeof setInterval;
+
+      globalThis.clearInterval = ((id: unknown) => {
+        if (id === fakeInterval) {
+          fakeInterval.cleared = true;
+          return;
+        }
+        originalClearInterval(id as Parameters<typeof clearInterval>[0]);
+      }) as typeof clearInterval;
+
+      const themeCalls: string[] = [];
+      let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
+
+      const mockPi: MockExtensionAPI = {
+        on(name: string, handler: (...args: unknown[]) => unknown): void {
+          if (name === "session_start") {
+            sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+          }
+        },
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      piThemeSwitcher(mockPi as any);
+      assert.ok(sessionStartHandler, "session_start handler should be registered");
+
+      let stale = false;
+      const ctx = {
+        get cwd(): string {
+          if (stale) {
+            throw new Error("ctx.cwd was read after ctx became stale");
+          }
+          return "/test/project";
+        },
+        hasUI: true,
+        get ui(): MockContext["ui"] {
+          if (stale) {
+            throw new Error("ctx.ui was read after ctx became stale");
+          }
+          return {
+            setTheme(theme: string): void {
+              themeCalls.push(theme);
+            },
+            notify(): void {},
+          };
+        },
+      } as MockContext;
+
+      // Initial session_start is allowed to read the live ctx.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sessionStartHandler as any)({}, ctx);
+      assert.deepEqual(themeCalls, ["dark"]);
+      assert.ok(intervalCallback, "polling interval callback should be registered");
+
+      // Simulate pi 0.81 invalidating the old session ctx after reload/session replacement.
+      stale = true;
+      process.env.PI_AGENT_THEME = "light";
+
+      assert.doesNotThrow(() => {
+        intervalCallback?.();
+      });
+      assert.deepEqual(themeCalls, ["dark", "light"]);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
+  });
+});
+
 await runTest("extension: registers session_shutdown handler", () => {
   const shutdownRegistered: string[] = [];
 

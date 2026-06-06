@@ -6,7 +6,7 @@ import {
   resolveConfig,
 } from "./src/config.js";
 import { resolveTheme } from "./src/theme.js";
-import type { ResolvedTheme, ThemeSwitcherContext } from "./src/types.js";
+import type { ResolvedTheme } from "./src/types.js";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
@@ -21,28 +21,33 @@ function determineTheme(cwd?: string): ResolvedTheme {
   return resolveTheme(config, process.env, hour);
 }
 
-function applyTheme(ctx: ThemeSwitcherContext): void {
-  const theme = determineTheme(ctx.cwd);
+function applyTheme(cwd: string | undefined, setTheme: (theme: ResolvedTheme) => void): void {
+  const theme = determineTheme(cwd);
 
   if (theme !== currentTheme) {
     currentTheme = theme;
-    ctx.ui.setTheme(theme);
+    setTheme(theme);
   }
 }
 
 export default function piThemeSwitcher(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
+    const cwd = ctx.cwd;
+    const ui = ctx.ui;
+    const setTheme = ui.setTheme.bind(ui);
+
     currentTheme = null; // force re-evaluation on session start
-    applyTheme(ctx);
+    applyTheme(cwd, setTheme);
 
     // Clear any existing interval
     if (intervalId) {
       clearInterval(intervalId);
     }
 
-    // Poll periodically for time-based changes
+    // Poll periodically for time-based changes. Capture only plain values/functions;
+    // pi 0.81+ invalidates ctx objects after reload/session replacement.
     intervalId = setInterval(() => {
-      applyTheme(ctx);
+      applyTheme(cwd, setTheme);
     }, POLL_INTERVAL_MS).unref();
   });
 
