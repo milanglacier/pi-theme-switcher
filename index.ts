@@ -65,9 +65,12 @@ function pollTheme(): void {
     clearPolling();
     activeContext = null;
     currentTheme = null;
-    console.warn(
-      `[pi-theme-switcher] Theme polling disabled: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = `[pi-theme-switcher] Theme polling disabled: ${error instanceof Error ? error.message : String(error)}`;
+    try {
+      ctx.ui.notify(message, "warning");
+    } catch {
+      console.warn(message);
+    }
   }
 }
 
