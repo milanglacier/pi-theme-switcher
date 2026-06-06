@@ -6,7 +6,7 @@ import {
   resolveConfig,
 } from "./src/config.js";
 import { resolveTheme } from "./src/theme.js";
-import type { ResolvedTheme, ThemeTarget } from "./src/types.js";
+import type { ResolvedTheme, ThemeSwitcherContext, ThemeTarget } from "./src/types.js";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
@@ -29,6 +29,17 @@ function applyTheme(target: ThemeTarget): void {
     currentTheme = theme;
     target.setTheme(theme);
   }
+}
+
+function isTuiSession(ctx: ThemeSwitcherContext): boolean {
+  const mode = (ctx as ThemeSwitcherContext & { mode?: string }).mode;
+  if (mode !== undefined) {
+    return mode === "tui";
+  }
+
+  // Compatibility with older pi versions whose ExtensionContext did not expose
+  // ctx.mode and where ctx.hasUI only meant the interactive terminal UI.
+  return ctx.hasUI;
 }
 
 function pollTheme(): void {
@@ -54,6 +65,18 @@ function pollTheme(): void {
 
 export default function piThemeSwitcher(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
+    // Theme switching requires a real terminal TUI. In RPC, print, and JSON
+    // modes, setTheme is unsupported or meaningless, so leave the session alone.
+    if (!isTuiSession(ctx)) {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      activeTarget = null;
+      currentTheme = null;
+      return;
+    }
+
     // Do not keep ctx itself: pi invalidates old ctx objects after reload or
     // session replacement. Keep a tiny per-session target instead, and make the
     // timer look up the current target each tick.

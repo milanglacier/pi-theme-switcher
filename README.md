@@ -10,13 +10,13 @@ pi install npm:pi-theme-switcher
 
 ## How it works
 
-On session start, the extension evaluates the theme in this order:
+On TUI session start, the extension evaluates the theme in this order:
 
 1. **`PI_AGENT_THEME`** — set to `"dark"` or `"light"` to force a theme
 2. **`THEME_MODE`** — set to `"night"` (dark) or `"day"` (light)
 3. **Time of day** — fallback to dark/light based on system clock (configurable window)
 
-The extension polls every 60 seconds to handle time-based transitions during long sessions.
+The extension polls every 60 seconds to handle time-based transitions during long TUI sessions. It does not run in RPC, print, or JSON sessions where no terminal TUI theme can be changed.
 
 ## Configuration
 

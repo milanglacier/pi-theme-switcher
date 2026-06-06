@@ -343,6 +343,7 @@ type MockExtensionAPI = {
 
 type MockContext = {
   cwd: string;
+  mode: "tui" | "rpc" | "json" | "print";
   hasUI: boolean;
   ui: {
     setTheme: (theme: string) => void;
@@ -370,6 +371,7 @@ await runTest("extension: sets theme to dark when PI_AGENT_THEME=dark on session
 
     const ctx: MockContext = {
       cwd: "/test/project",
+      mode: "tui",
       hasUI: true,
       ui: {
         setTheme(theme: string): void {
@@ -404,6 +406,7 @@ await runTest("extension: sets theme to light when THEME_MODE=day on session_sta
 
     const ctx: MockContext = {
       cwd: "/test/project",
+      mode: "tui",
       hasUI: true,
       ui: {
         setTheme(theme: string): void {
@@ -417,6 +420,52 @@ await runTest("extension: sets theme to light when THEME_MODE=day on session_sta
     (sessionStartHandler as any)({}, ctx);
 
     assert.deepEqual(themeCalls, ["light"]);
+  });
+});
+
+await runTest("extension: ignores non-TUI sessions even when ctx.hasUI is true", () => {
+  withEnv({ PI_AGENT_THEME: "dark" }, () => {
+    const originalSetInterval = globalThis.setInterval;
+    let intervalStarted = false;
+    let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
+
+    try {
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        intervalStarted = true;
+        return originalSetInterval(...args);
+      }) as typeof setInterval;
+
+      const mockPi: MockExtensionAPI = {
+        on(name: string, handler: (...args: unknown[]) => unknown): void {
+          if (name === "session_start") {
+            sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+          }
+        },
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      piThemeSwitcher(mockPi as any);
+      assert.ok(sessionStartHandler, "session_start handler should be registered");
+
+      const ctx = {
+        mode: "rpc",
+        hasUI: true,
+        get cwd(): string {
+          throw new Error("ctx.cwd should not be read for non-TUI sessions");
+        },
+        get ui(): MockContext["ui"] {
+          throw new Error("ctx.ui should not be read for non-TUI sessions");
+        },
+      } as MockContext;
+
+      assert.doesNotThrow(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (sessionStartHandler as any)({}, ctx);
+      });
+      assert.equal(intervalStarted, false);
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+    }
   });
 });
 
@@ -438,6 +487,7 @@ await runTest("extension: does not call setTheme if theme hasn't changed on re-e
 
     const ctx: MockContext = {
       cwd: "/test/project",
+      mode: "tui",
       hasUI: true,
       ui: {
         setTheme(theme: string): void {
@@ -514,6 +564,7 @@ await runTest("extension: polling does not read captured ctx after it becomes st
           }
           return "/test/project";
         },
+        mode: "tui",
         hasUI: true,
         get ui(): MockContext["ui"] {
           if (stale) {
