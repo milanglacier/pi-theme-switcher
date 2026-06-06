@@ -6,12 +6,12 @@ import {
   resolveConfig,
 } from "./src/config.js";
 import { resolveTheme } from "./src/theme.js";
-import type { ResolvedTheme, ThemeSwitcherContext, ThemeTarget } from "./src/types.js";
+import type { ResolvedTheme, ThemeSwitcherContext } from "./src/types.js";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
 let currentTheme: ResolvedTheme | null = null;
-let activeTarget: ThemeTarget | null = null;
+let activeContext: ThemeSwitcherContext | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 function determineTheme(cwd?: string): ResolvedTheme {
@@ -22,12 +22,12 @@ function determineTheme(cwd?: string): ResolvedTheme {
   return resolveTheme(config, process.env, hour);
 }
 
-function applyTheme(target: ThemeTarget): void {
-  const theme = determineTheme(target.cwd);
+function applyTheme(ctx: ThemeSwitcherContext): void {
+  const theme = determineTheme(ctx.cwd);
 
   if (theme !== currentTheme) {
     currentTheme = theme;
-    target.setTheme(theme);
+    ctx.ui.setTheme(theme);
   }
 }
 
@@ -42,20 +42,28 @@ function isTuiSession(ctx: ThemeSwitcherContext): boolean {
   return ctx.hasUI;
 }
 
+function clearPolling(): void {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+}
+
 function pollTheme(): void {
-  const target = activeTarget;
-  if (!target) {
+  const ctx = activeContext;
+  if (!ctx) {
     return;
   }
 
   try {
-    applyTheme(target);
+    applyTheme(ctx);
   } catch (error) {
-    // Timer callbacks are outside pi's event error handling. If the captured
-    // theme setter ever becomes unusable, disable this target rather than
-    // letting one polling tick crash pi. A later session_start will install a
-    // fresh target.
-    activeTarget = null;
+    // Timer callbacks are outside pi's event error handling. If the ctx has
+    // gone stale after reload/session replacement, or the theme switch fails,
+    // disable polling instead of letting one tick crash pi. A later
+    // session_start will install a fresh ctx.
+    clearPolling();
+    activeContext = null;
     currentTheme = null;
     console.warn(
       `[pi-theme-switcher] Theme polling disabled: ${error instanceof Error ? error.message : String(error)}`,
@@ -68,44 +76,28 @@ export default function piThemeSwitcher(pi: ExtensionAPI): void {
     // Theme switching requires a real terminal TUI. In RPC, print, and JSON
     // modes, setTheme is unsupported or meaningless, so leave the session alone.
     if (!isTuiSession(ctx)) {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-      activeTarget = null;
+      clearPolling();
+      activeContext = null;
       currentTheme = null;
       return;
     }
 
-    // Do not keep ctx itself: pi invalidates old ctx objects after reload or
-    // session replacement. Keep a tiny per-session target instead, and make the
-    // timer look up the current target each tick.
-    const cwd = ctx.cwd;
-    const ui = ctx.ui;
-
-    activeTarget = {
-      cwd,
-      setTheme: ui.setTheme.bind(ui),
-    };
+    // Use the live ctx while it remains valid. If Pi later invalidates it after
+    // reload/session replacement, the next polling tick catches that stale-ctx
+    // error and disables this timer instead of bypassing the ctx lifetime guard.
+    clearPolling();
+    activeContext = ctx;
 
     currentTheme = null; // force re-evaluation on session start
-    applyTheme(activeTarget);
-
-    // Clear any existing interval
-    if (intervalId) {
-      clearInterval(intervalId);
-    }
+    applyTheme(ctx);
 
     // Poll periodically for time-based changes.
     intervalId = setInterval(pollTheme, POLL_INTERVAL_MS).unref();
   });
 
   pi.on("session_shutdown", () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
-    activeTarget = null;
+    clearPolling();
+    activeContext = null;
     currentTheme = null;
   });
 }

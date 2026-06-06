@@ -510,10 +510,11 @@ await runTest("extension: does not call setTheme if theme hasn't changed on re-e
   });
 });
 
-await runTest("extension: polling does not read captured ctx after it becomes stale", () => {
+await runTest("extension: polling applies while ctx is live and stops after it becomes stale", () => {
   withEnv({ PI_AGENT_THEME: "dark", THEME_MODE: undefined }, () => {
     const originalSetInterval = globalThis.setInterval;
     const originalClearInterval = globalThis.clearInterval;
+    const originalWarn = console.warn;
 
     let intervalCallback: (() => void) | null = null;
     type FakeInterval = {
@@ -540,6 +541,11 @@ await runTest("extension: polling does not read captured ctx after it becomes st
         }
         originalClearInterval(id as Parameters<typeof clearInterval>[0]);
       }) as typeof clearInterval;
+
+      const warnings: string[] = [];
+      console.warn = ((message?: unknown) => {
+        warnings.push(String(message));
+      }) as typeof console.warn;
 
       const themeCalls: string[] = [];
       let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
@@ -579,23 +585,37 @@ await runTest("extension: polling does not read captured ctx after it becomes st
         },
       } as MockContext;
 
-      // Initial session_start is allowed to read the live ctx.
+      // Initial session_start is allowed to use the live ctx.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (sessionStartHandler as any)({}, ctx);
       assert.deepEqual(themeCalls, ["dark"]);
       assert.ok(intervalCallback, "polling interval callback should be registered");
 
-      // Simulate pi 0.81 invalidating the old session ctx after reload/session replacement.
-      stale = true;
+      // While ctx is live, polling can still re-evaluate and switch the theme.
       process.env.PI_AGENT_THEME = "light";
+      assert.doesNotThrow(() => {
+        intervalCallback?.();
+      });
+      assert.deepEqual(themeCalls, ["dark", "light"]);
+      assert.equal(fakeInterval.cleared, false);
+
+      // After Pi invalidates the old session ctx, polling should catch the
+      // stale-ctx error, stop the timer, and not call setTheme via a captured
+      // method from the old ctx.
+      stale = true;
+      process.env.PI_AGENT_THEME = "dark";
 
       assert.doesNotThrow(() => {
         intervalCallback?.();
       });
       assert.deepEqual(themeCalls, ["dark", "light"]);
+      assert.equal(fakeInterval.cleared, true);
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /Theme polling disabled/);
     } finally {
       globalThis.setInterval = originalSetInterval;
       globalThis.clearInterval = originalClearInterval;
+      console.warn = originalWarn;
     }
   });
 });
