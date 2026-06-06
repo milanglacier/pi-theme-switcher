@@ -9,4 +9,9 @@ export interface ThemeSwitcherConfig {
 
 export type ResolvedTheme = "dark" | "light";
 
+export type ThemeTarget = {
+  cwd: string | undefined;
+  setTheme(theme: ResolvedTheme): void;
+};
+
 export type ThemeSwitcherContext = ExtensionContext;
