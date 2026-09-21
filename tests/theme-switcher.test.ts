@@ -3,6 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionHandler,
+  SessionStartEvent,
+} from "@earendil-works/pi-coding-agent";
 import piThemeSwitcher from "../index.js";
 import {
   DEFAULT_NIGHT_END,
@@ -337,35 +343,40 @@ await runTest("getProjectConfigPath: returns cwd/.pi/agent/theme-switcher.json",
 // Integration: extension wiring
 // ---------------------------------------------------------------------------
 
-type MockExtensionAPI = {
-  on: (name: string, handler: (...args: unknown[]) => unknown) => void;
+type MockContext = Pick<ExtensionContext, "cwd" | "mode" | "hasUI"> & {
+  ui: Pick<ExtensionContext["ui"], "setTheme" | "notify">;
 };
 
-type MockContext = {
-  cwd: string;
-  mode: "tui" | "rpc" | "json" | "print";
-  hasUI: boolean;
-  ui: {
-    setTheme: (theme: string) => void;
-    notify: (message: string, level: string) => void;
-  };
-};
+type TestHandler = (...args: unknown[]) => unknown;
+
+function testExtensionApi(register: (name: string, handler: TestHandler) => void): ExtensionAPI {
+  return {
+    on: ((name: string, handler: TestHandler) => {
+      register(name, handler);
+      return () => {};
+    }) as ExtensionAPI["on"],
+  } as ExtensionAPI;
+}
+
+type SessionStartHandler = ExtensionHandler<SessionStartEvent>;
+
+function invokeSessionStart(handler: unknown, ctx: MockContext): void {
+  const event: SessionStartEvent = { type: "session_start", reason: "startup" };
+  void (handler as SessionStartHandler)(event, ctx as ExtensionContext);
+}
 
 await runTest("extension: sets theme to dark when PI_AGENT_THEME=dark on session_start", () => {
   withEnv({ PI_AGENT_THEME: "dark" }, () => {
     const themeCalls: string[] = [];
     let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
 
-    const mockPi: MockExtensionAPI = {
-      on(name: string, handler: (...args: unknown[]) => unknown): void {
-        if (name === "session_start") {
-          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
-        }
-      },
-    };
+    const mockPi = testExtensionApi((name, handler) => {
+      if (name === "session_start") {
+        sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+      }
+    });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    piThemeSwitcher(mockPi as any);
+    piThemeSwitcher(mockPi);
 
     assert.ok(sessionStartHandler, "session_start handler should be registered");
 
@@ -374,15 +385,15 @@ await runTest("extension: sets theme to dark when PI_AGENT_THEME=dark on session
       mode: "tui",
       hasUI: true,
       ui: {
-        setTheme(theme: string): void {
+        setTheme(theme: string) {
           themeCalls.push(theme);
+          return { success: true };
         },
         notify(): void {},
       },
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sessionStartHandler as any)({}, ctx);
+    invokeSessionStart(sessionStartHandler, ctx);
 
     assert.deepEqual(themeCalls, ["dark"]);
   });
@@ -393,31 +404,28 @@ await runTest("extension: sets theme to light when THEME_MODE=day on session_sta
     const themeCalls: string[] = [];
     let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
 
-    const mockPi: MockExtensionAPI = {
-      on(name: string, handler: (...args: unknown[]) => unknown): void {
-        if (name === "session_start") {
-          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
-        }
-      },
-    };
+    const mockPi = testExtensionApi((name, handler) => {
+      if (name === "session_start") {
+        sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+      }
+    });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    piThemeSwitcher(mockPi as any);
+    piThemeSwitcher(mockPi);
 
     const ctx: MockContext = {
       cwd: "/test/project",
       mode: "tui",
       hasUI: true,
       ui: {
-        setTheme(theme: string): void {
+        setTheme(theme: string) {
           themeCalls.push(theme);
+          return { success: true };
         },
         notify(): void {},
       },
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sessionStartHandler as any)({}, ctx);
+    invokeSessionStart(sessionStartHandler, ctx);
 
     assert.deepEqual(themeCalls, ["light"]);
   });
@@ -435,16 +443,13 @@ await runTest("extension: ignores non-TUI sessions even when ctx.hasUI is true",
         return originalSetInterval(...args);
       }) as typeof setInterval;
 
-      const mockPi: MockExtensionAPI = {
-        on(name: string, handler: (...args: unknown[]) => unknown): void {
-          if (name === "session_start") {
-            sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
-          }
-        },
-      };
+      const mockPi = testExtensionApi((name, handler) => {
+        if (name === "session_start") {
+          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+        }
+      });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      piThemeSwitcher(mockPi as any);
+      piThemeSwitcher(mockPi);
       assert.ok(sessionStartHandler, "session_start handler should be registered");
 
       const ctx = {
@@ -459,8 +464,7 @@ await runTest("extension: ignores non-TUI sessions even when ctx.hasUI is true",
       } as MockContext;
 
       assert.doesNotThrow(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (sessionStartHandler as any)({}, ctx);
+        invokeSessionStart(sessionStartHandler, ctx);
       });
       assert.equal(intervalStarted, false);
     } finally {
@@ -474,38 +478,34 @@ await runTest("extension: does not call setTheme if theme hasn't changed on re-e
     const themeCalls: string[] = [];
     let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
 
-    const mockPi: MockExtensionAPI = {
-      on(name: string, handler: (...args: unknown[]) => unknown): void {
-        if (name === "session_start") {
-          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
-        }
-      },
-    };
+    const mockPi = testExtensionApi((name, handler) => {
+      if (name === "session_start") {
+        sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+      }
+    });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    piThemeSwitcher(mockPi as any);
+    piThemeSwitcher(mockPi);
 
     const ctx: MockContext = {
       cwd: "/test/project",
       mode: "tui",
       hasUI: true,
       ui: {
-        setTheme(theme: string): void {
+        setTheme(theme: string) {
           themeCalls.push(theme);
+          return { success: true };
         },
         notify(): void {},
       },
     };
 
     // First call: sets to dark
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sessionStartHandler as any)({}, ctx);
+    invokeSessionStart(sessionStartHandler, ctx);
     assert.deepEqual(themeCalls, ["dark"]);
 
     // Simulate another session_start (e.g., /new)
     // currentTheme is reset to null in the handler, so it will call setTheme again
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (sessionStartHandler as any)({}, ctx);
+    invokeSessionStart(sessionStartHandler, ctx);
     assert.deepEqual(themeCalls, ["dark", "dark"]);
   });
 });
@@ -550,16 +550,13 @@ await runTest("extension: polling applies while ctx is live and stops after it b
       const themeCalls: string[] = [];
       let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
 
-      const mockPi: MockExtensionAPI = {
-        on(name: string, handler: (...args: unknown[]) => unknown): void {
-          if (name === "session_start") {
-            sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
-          }
-        },
-      };
+      const mockPi = testExtensionApi((name, handler) => {
+        if (name === "session_start") {
+          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+        }
+      });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      piThemeSwitcher(mockPi as any);
+      piThemeSwitcher(mockPi);
       assert.ok(sessionStartHandler, "session_start handler should be registered");
 
       let stale = false;
@@ -577,8 +574,9 @@ await runTest("extension: polling applies while ctx is live and stops after it b
             throw new Error("ctx.ui was read after ctx became stale");
           }
           return {
-            setTheme(theme: string): void {
+            setTheme(theme: string) {
               themeCalls.push(theme);
+              return { success: true };
             },
             notify(): void {},
           };
@@ -586,8 +584,7 @@ await runTest("extension: polling applies while ctx is live and stops after it b
       } as MockContext;
 
       // Initial session_start is allowed to use the live ctx.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sessionStartHandler as any)({}, ctx);
+      invokeSessionStart(sessionStartHandler, ctx);
       assert.deepEqual(themeCalls, ["dark"]);
       assert.ok(intervalCallback, "polling interval callback should be registered");
 
@@ -623,14 +620,11 @@ await runTest("extension: polling applies while ctx is live and stops after it b
 await runTest("extension: registers session_shutdown handler", () => {
   const shutdownRegistered: string[] = [];
 
-  const mockPi: MockExtensionAPI = {
-    on(name: string, _handler: (...args: unknown[]) => unknown): void {
-      shutdownRegistered.push(name);
-    },
-  };
+  const mockPi = testExtensionApi((name) => {
+    shutdownRegistered.push(name);
+  });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  piThemeSwitcher(mockPi as any);
+  piThemeSwitcher(mockPi);
 
   assert.ok(shutdownRegistered.includes("session_shutdown"));
 });
