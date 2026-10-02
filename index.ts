@@ -5,8 +5,8 @@ import {
   getProjectConfigPath,
   resolveConfig,
 } from "./src/config.js";
-import { resolveTheme } from "./src/theme.js";
-import type { ResolvedTheme, ThemeSwitcherContext } from "./src/types.js";
+import { resolveTheme, resolveThemeMode } from "./src/theme.js";
+import type { ResolvedTheme, ThemeMode, ThemeSwitcherContext } from "./src/types.js";
 
 const POLL_INTERVAL_MS = 60_000; // 1 minute
 
@@ -14,20 +14,29 @@ let currentTheme: ResolvedTheme | null = null;
 let activeContext: ThemeSwitcherContext | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
-function determineTheme(cwd?: string): ResolvedTheme {
+function determineTheme(cwd?: string): { theme: ResolvedTheme; mode: ThemeMode } {
   const globalPath = getGlobalConfigPath();
   const projectPath = cwd ? getProjectConfigPath(cwd) : null;
   const config = resolveConfig(globalPath, projectPath);
   const hour = new Date().getHours();
-  return resolveTheme(config, process.env, hour);
+  return {
+    theme: resolveTheme(config, process.env, hour),
+    mode: resolveThemeMode(config, process.env, hour),
+  };
 }
 
 function applyTheme(ctx: ThemeSwitcherContext): void {
-  const theme = determineTheme(ctx.cwd);
+  const { theme, mode } = determineTheme(ctx.cwd);
+  if (theme === currentTheme) {
+    return;
+  }
 
-  if (theme !== currentTheme) {
+  currentTheme = null;
+  if (ctx.ui.setTheme(theme).success) {
     currentTheme = theme;
-    ctx.ui.setTheme(theme);
+  } else if (theme !== mode && ctx.ui.setTheme(mode).success) {
+    // Cache only the applied fallback so polling can retry the custom theme.
+    currentTheme = mode;
   }
 }
 

@@ -42,6 +42,8 @@ The `darkTheme` and `lightTheme` fields are independent and optional. Each falls
 
 Theme names refer to any theme available in Pi, including custom themes from `~/.pi/agent/themes/`, project `.pi/themes/`, or packages. See [Customize Pi with themes](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/themes.md).
 
+If a custom theme cannot be loaded, the extension applies the built-in theme for the selected mode (`dark` or `light`). It retries the custom theme on later polling ticks.
+
 A config may contain only theme fields; the default night range then applies.
 
 Project config overrides global config when the config file is valid.

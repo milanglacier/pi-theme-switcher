@@ -616,6 +616,67 @@ await runTest("extension: sets custom theme from config on session_start", () =>
   });
 });
 
+for (const mode of ["dark", "light"] as const) {
+  await runTest(`extension: failed custom ${mode} theme falls back and retries on polling`, () => {
+    withTempDir((dir) => {
+      writeJson(join(dir, "theme-switcher.json"), {
+        darkTheme: "custom_dark",
+        lightTheme: "custom_light",
+      });
+      withEnv({ PI_CODING_AGENT_DIR: dir, PI_AGENT_THEME: mode }, () => {
+        const originalSetInterval = globalThis.setInterval;
+        let poll: (() => void) | undefined;
+        let start: TestHandler | undefined;
+        let shutdown: TestHandler | undefined;
+        const customTheme = `custom_${mode}`;
+        const calls: string[] = [];
+        let customAvailable = false;
+
+        try {
+          globalThis.setInterval = ((callback: () => void) => {
+            poll = callback;
+            return { unref() { return this; } };
+          }) as unknown as typeof setInterval;
+          piThemeSwitcher(testExtensionApi((name, handler) => {
+            if (name === "session_start") start = handler;
+            if (name === "session_shutdown") shutdown = handler;
+          }));
+          const ctx: MockContext = {
+            cwd: join(dir, "project"),
+            mode: "tui",
+            hasUI: true,
+            ui: {
+              setTheme(theme: string) {
+                calls.push(theme);
+                return theme === customTheme && !customAvailable
+                  ? { success: false, error: "Theme not found" }
+                  : { success: true };
+              },
+              notify(): void {},
+            },
+          };
+          assert.ok(start);
+          invokeSessionStart(start, ctx);
+          assert.deepEqual(calls, [customTheme, mode]);
+          assert.ok(poll);
+
+          poll();
+          assert.deepEqual(calls, [customTheme, mode, customTheme, mode]);
+
+          customAvailable = true;
+          poll();
+          assert.deepEqual(calls, [customTheme, mode, customTheme, mode, customTheme]);
+          poll();
+          assert.equal(calls.length, 5, "successful custom theme should not be reapplied");
+        } finally {
+          shutdown?.();
+          globalThis.setInterval = originalSetInterval;
+        }
+      });
+    });
+  });
+}
+
 await runTest("extension: ignores non-TUI sessions even when ctx.hasUI is true", () => {
   withEnv({ PI_AGENT_THEME: "dark" }, () => {
     const originalSetInterval = globalThis.setInterval;

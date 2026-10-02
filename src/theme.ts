@@ -23,7 +23,7 @@ export function isInNightRange(
  *   2. THEME_MODE env var ("night" → dark, "day" → light)
  *   3. Time-based check against configurable [nightStart, nightEnd]
  */
-function resolveThemeMode(
+export function resolveThemeMode(
   config: ThemeSwitcherConfig,
   env: NodeJS.ProcessEnv,
   hour: number,
