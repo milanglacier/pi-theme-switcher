@@ -1,4 +1,4 @@
-import type { ThemeSwitcherConfig } from "./types.js";
+import type { ResolvedTheme, ThemeMode, ThemeSwitcherConfig } from "./types.js";
 
 /**
  * Determines whether a given hour falls within the configured night range.
@@ -18,16 +18,16 @@ export function isInNightRange(
 }
 
 /**
- * Resolves the theme based on precedence:
+ * Resolves the dark/light mode based on precedence:
  *   1. PI_AGENT_THEME env var ("dark" or "light")
  *   2. THEME_MODE env var ("night" → dark, "day" → light)
  *   3. Time-based check against configurable [nightStart, nightEnd]
  */
-export function resolveTheme(
+function resolveThemeMode(
   config: ThemeSwitcherConfig,
   env: NodeJS.ProcessEnv,
   hour: number,
-): "dark" | "light" {
+): ThemeMode {
   // 1. Highest priority: PI_AGENT_THEME
   const agentTheme = env.PI_AGENT_THEME?.trim().toLowerCase();
   if (agentTheme === "dark" || agentTheme === "light") {
@@ -48,4 +48,20 @@ export function resolveTheme(
     return "dark";
   }
   return "light";
+}
+
+/**
+ * Resolves the theme name to apply. The resolved mode maps to the matching
+ * custom theme when the config defines one, otherwise to the built-in
+ * "dark" or "light" theme.
+ */
+export function resolveTheme(
+  config: ThemeSwitcherConfig,
+  env: NodeJS.ProcessEnv,
+  hour: number,
+): ResolvedTheme {
+  if (resolveThemeMode(config, env, hour) === "dark") {
+    return config.darkTheme ?? "dark";
+  }
+  return config.lightTheme ?? "light";
 }

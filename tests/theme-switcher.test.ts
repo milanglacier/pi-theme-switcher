@@ -206,6 +206,57 @@ await runTest("resolveTheme: time-based with custom non-wrapping range (0-5)", (
 });
 
 // ---------------------------------------------------------------------------
+// Unit: resolveTheme with custom themes
+// ---------------------------------------------------------------------------
+
+const customThemeConfig: ThemeSwitcherConfig = {
+  nightStart: 23,
+  nightEnd: 7,
+  darkTheme: "rosepine",
+  lightTheme: "rosepine_dawn",
+};
+
+await runTest("resolveTheme: PI_AGENT_THEME=dark maps to the configured darkTheme", () => {
+  withEnv({ PI_AGENT_THEME: "dark", THEME_MODE: undefined }, () => {
+    assert.equal(resolveTheme(customThemeConfig, process.env, 12), "rosepine");
+  });
+});
+
+await runTest("resolveTheme: PI_AGENT_THEME=light maps to the configured lightTheme", () => {
+  withEnv({ PI_AGENT_THEME: "light", THEME_MODE: undefined }, () => {
+    assert.equal(resolveTheme(customThemeConfig, process.env, 0), "rosepine_dawn");
+  });
+});
+
+await runTest("resolveTheme: THEME_MODE maps to the configured custom themes", () => {
+  withEnv({ PI_AGENT_THEME: undefined, THEME_MODE: "night" }, () => {
+    assert.equal(resolveTheme(customThemeConfig, process.env, 12), "rosepine");
+  });
+  withEnv({ PI_AGENT_THEME: undefined, THEME_MODE: "day" }, () => {
+    assert.equal(resolveTheme(customThemeConfig, process.env, 0), "rosepine_dawn");
+  });
+});
+
+await runTest("resolveTheme: time-based mode maps to the configured custom themes", () => {
+  withEnv({ PI_AGENT_THEME: undefined, THEME_MODE: undefined }, () => {
+    assert.equal(resolveTheme(customThemeConfig, process.env, 0), "rosepine");
+    assert.equal(resolveTheme(customThemeConfig, process.env, 12), "rosepine_dawn");
+  });
+});
+
+await runTest("resolveTheme: unconfigured modes fall back to built-in themes", () => {
+  const config: ThemeSwitcherConfig = {
+    nightStart: 23,
+    nightEnd: 7,
+    lightTheme: "rosepine_dawn",
+  };
+  withEnv({ PI_AGENT_THEME: undefined, THEME_MODE: undefined }, () => {
+    assert.equal(resolveTheme(config, process.env, 0), "dark");
+    assert.equal(resolveTheme(config, process.env, 12), "rosepine_dawn");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Unit: config loading
 // ---------------------------------------------------------------------------
 
@@ -319,6 +370,100 @@ await runTest("resolveConfig: handles non-object JSON gracefully", () => {
   });
 });
 
+await runTest("resolveConfig: loads custom theme names", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, {
+      nightStart: 22,
+      nightEnd: 6,
+      darkTheme: "rosepine",
+      lightTheme: "rosepine_dawn",
+    });
+
+    const result = resolveConfig(globalPath, null);
+
+    assert.equal(result.nightStart, 22);
+    assert.equal(result.nightEnd, 6);
+    assert.equal(result.darkTheme, "rosepine");
+    assert.equal(result.lightTheme, "rosepine_dawn");
+  });
+});
+
+await runTest("resolveConfig: theme-only config uses the default night range", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, { darkTheme: "rosepine", lightTheme: "rosepine_dawn" });
+
+    const result = resolveConfig(globalPath, null);
+
+    assert.equal(result.nightStart, DEFAULT_NIGHT_START);
+    assert.equal(result.nightEnd, DEFAULT_NIGHT_END);
+    assert.equal(result.darkTheme, "rosepine");
+    assert.equal(result.lightTheme, "rosepine_dawn");
+  });
+});
+
+await runTest("resolveConfig: theme names are trimmed", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, { darkTheme: "  rosepine  " });
+
+    const result = resolveConfig(globalPath, null);
+
+    assert.equal(result.darkTheme, "rosepine");
+    assert.equal(result.lightTheme, undefined);
+  });
+});
+
+await runTest("resolveConfig: invalid theme names warn and fall back", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, { darkTheme: "", lightTheme: 42 });
+
+    const warnings: string[] = [];
+    const result = resolveConfig(globalPath, null, (msg) => warnings.push(msg));
+
+    assert.equal(result.nightStart, DEFAULT_NIGHT_START);
+    assert.equal(result.nightEnd, DEFAULT_NIGHT_END);
+    assert.equal(result.darkTheme, undefined);
+    assert.equal(result.lightTheme, undefined);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /darkTheme must be a non-empty string/);
+  });
+});
+
+await runTest("resolveConfig: project theme config overrides global theme config", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "global.json");
+    const projectPath = join(dir, "project.json");
+    writeJson(globalPath, { darkTheme: "global_dark" });
+    writeJson(projectPath, { darkTheme: "project_dark", lightTheme: "project_light" });
+
+    const result = resolveConfig(globalPath, projectPath);
+
+    assert.equal(result.darkTheme, "project_dark");
+    assert.equal(result.lightTheme, "project_light");
+    assert.equal(result.nightStart, DEFAULT_NIGHT_START);
+    assert.equal(result.nightEnd, DEFAULT_NIGHT_END);
+  });
+});
+
+await runTest("resolveConfig: partial night range is rejected even with custom themes", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, { nightStart: 22, darkTheme: "rosepine" });
+
+    const warnings: string[] = [];
+    const result = resolveConfig(globalPath, null, (msg) => warnings.push(msg));
+
+    assert.equal(result.nightStart, DEFAULT_NIGHT_START);
+    assert.equal(result.nightEnd, DEFAULT_NIGHT_END);
+    assert.equal(result.darkTheme, undefined);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /configured together/);
+  });
+});
+
 await runTest("getGlobalConfigPath: uses PI_CODING_AGENT_DIR when set", () => {
   withEnv({ PI_CODING_AGENT_DIR: "/custom/agent" }, () => {
     assert.equal(getGlobalConfigPath(), "/custom/agent/theme-switcher.json");
@@ -428,6 +573,46 @@ await runTest("extension: sets theme to light when THEME_MODE=day on session_sta
     invokeSessionStart(sessionStartHandler, ctx);
 
     assert.deepEqual(themeCalls, ["light"]);
+  });
+});
+
+await runTest("extension: sets custom theme from config on session_start", () => {
+  withTempDir((dir) => {
+    const globalPath = join(dir, "theme-switcher.json");
+    writeJson(globalPath, { darkTheme: "rosepine" });
+
+    // PI_AGENT_THEME forces dark mode; the config maps dark mode to the
+    // custom theme.
+    withEnv({ PI_CODING_AGENT_DIR: dir, PI_AGENT_THEME: "dark" }, () => {
+      const themeCalls: string[] = [];
+      let sessionStartHandler: ((event: unknown, ctx: MockContext) => Promise<void> | void) | null = null;
+
+      const mockPi = testExtensionApi((name, handler) => {
+        if (name === "session_start") {
+          sessionStartHandler = handler as (event: unknown, ctx: MockContext) => Promise<void> | void;
+        }
+      });
+
+      piThemeSwitcher(mockPi);
+      assert.ok(sessionStartHandler, "session_start handler should be registered");
+
+      const ctx: MockContext = {
+        cwd: join(dir, "project"),
+        mode: "tui",
+        hasUI: true,
+        ui: {
+          setTheme(theme: string) {
+            themeCalls.push(theme);
+            return { success: true };
+          },
+          notify(): void {},
+        },
+      };
+
+      invokeSessionStart(sessionStartHandler, ctx);
+
+      assert.deepEqual(themeCalls, ["rosepine"]);
+    });
   });
 });
 

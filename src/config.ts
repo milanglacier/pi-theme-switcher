@@ -24,6 +24,18 @@ function isValidHour(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 23;
 }
 
+function parseThemeName(value: unknown, field: string, path: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${field} must be a non-empty string in '${path}'`);
+  }
+
+  return value.trim();
+}
+
 function parseConfig(raw: string, path: string): ThemeSwitcherConfig | null {
   const parsed = JSON.parse(raw) as unknown;
 
@@ -34,23 +46,37 @@ function parseConfig(raw: string, path: string): ThemeSwitcherConfig | null {
   const record = parsed as Record<string, unknown>;
   const hasNightStart = record.nightStart !== undefined;
   const hasNightEnd = record.nightEnd !== undefined;
+  const darkTheme = parseThemeName(record.darkTheme, "darkTheme", path);
+  const lightTheme = parseThemeName(record.lightTheme, "lightTheme", path);
 
-  if (!hasNightStart && !hasNightEnd) {
+  if (!hasNightStart && !hasNightEnd && darkTheme === undefined && lightTheme === undefined) {
     return null;
   }
 
-  if (hasNightStart !== hasNightEnd) {
-    throw new Error(`nightStart and nightEnd must be configured together in '${path}'`);
+  let nightStart = DEFAULT_NIGHT_START;
+  let nightEnd = DEFAULT_NIGHT_END;
+
+  if (hasNightStart || hasNightEnd) {
+    if (hasNightStart !== hasNightEnd) {
+      throw new Error(`nightStart and nightEnd must be configured together in '${path}'`);
+    }
+
+    if (!isValidHour(record.nightStart) || !isValidHour(record.nightEnd)) {
+      throw new Error(`nightStart and nightEnd must be integers from 0 to 23 in '${path}'`);
+    }
+
+    nightStart = record.nightStart;
+    nightEnd = record.nightEnd;
   }
 
-  if (!isValidHour(record.nightStart) || !isValidHour(record.nightEnd)) {
-    throw new Error(`nightStart and nightEnd must be integers from 0 to 23 in '${path}'`);
+  const config: ThemeSwitcherConfig = { nightStart, nightEnd };
+  if (darkTheme !== undefined) {
+    config.darkTheme = darkTheme;
   }
-
-  return {
-    nightStart: record.nightStart,
-    nightEnd: record.nightEnd,
-  };
+  if (lightTheme !== undefined) {
+    config.lightTheme = lightTheme;
+  }
+  return config;
 }
 
 function readConfig(

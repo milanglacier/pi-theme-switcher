@@ -1,6 +1,6 @@
 # pi-theme-switcher
 
-Pi extension that automatically switches the terminal theme between dark and light based on environment variables, `THEME_MODE`, or time of day.
+Pi extension that automatically switches the terminal theme between dark and light based on environment variables, `THEME_MODE`, or time of day. Each mode can use a custom theme instead of the built-in `dark`/`light` themes.
 
 ## Installation
 
@@ -25,18 +25,26 @@ Create a config file at `~/.pi/agent/theme-switcher.json` (global) or `.pi/agent
 ```json
 {
   "nightStart": 22,
-  "nightEnd": 6
+  "nightEnd": 6,
+  "darkTheme": "rosepine",
+  "lightTheme": "rosepine_dawn"
 }
 ```
 
 - `nightStart` (default: `23`, 11 PM) — hour to switch to dark mode
 - `nightEnd` (default: `7`, 7 AM) — hour to switch to light mode
+- `darkTheme` (optional) — theme to use in dark mode instead of the built-in `dark` theme
+- `lightTheme` (optional) — theme to use in light mode instead of the built-in `light` theme
 
-Configure both fields together, or omit both to use defaults. A config with only one of these fields is ignored.
+Configure both `nightStart` and `nightEnd` together, or omit both to use defaults. A config with only one of these fields is ignored. When `nightStart > nightEnd` (e.g., 22–6) the night range wraps around midnight. When `nightStart <= nightEnd` (e.g., 0–5), it does not.
 
-When `nightStart > nightEnd` (e.g., 22–6) the night range wraps around midnight. When `nightStart <= nightEnd` (e.g., 0–5), it does not.
+The `darkTheme` and `lightTheme` fields are independent and optional. Each falls back to the built-in `dark` or `light` theme when omitted. The environment variables still select the dark/light mode; the mode is then mapped through this config. For example, with the config above, `PI_AGENT_THEME=light` applies `rosepine_dawn` rather than `light`.
 
-Project config overrides global config when it provides both fields.
+Theme names refer to any theme available in Pi, including custom themes from `~/.pi/agent/themes/`, project `.pi/themes/`, or packages. See [Customize Pi with themes](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/themes.md).
+
+A config may contain only theme fields; the default night range then applies.
+
+Project config overrides global config when the config file is valid.
 
 ## License
 
