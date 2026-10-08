@@ -54,7 +54,16 @@ function writeJson(path: string, content: unknown): void {
   writeFileSync(path, JSON.stringify(content, null, 2), "utf8");
 }
 
+// Tests must not depend on the developer's own Pi configuration. Unless a test
+// sets PI_CODING_AGENT_DIR itself, point it at an empty temporary directory, so
+// theme expectations use the built-in defaults instead of whatever config the
+// developer has in their agent directory.
 function withEnv(overrides: Record<string, string | undefined>, fn: () => void): void {
+  if (!("PI_CODING_AGENT_DIR" in overrides)) {
+    withTempDir((dir) => withEnv({ ...overrides, PI_CODING_AGENT_DIR: dir }, fn));
+    return;
+  }
+
   const originals: Record<string, string | undefined> = {};
   for (const key of Object.keys(overrides)) {
     originals[key] = process.env[key];
