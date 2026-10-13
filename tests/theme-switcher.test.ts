@@ -64,6 +64,9 @@ function withEnv(overrides: Record<string, string | undefined>, fn: () => void):
     return;
   }
 
+  // Each test owns the theme-selection environment, including unset values.
+  overrides = { PI_AGENT_THEME: undefined, THEME_MODE: undefined, ...overrides };
+
   const originals: Record<string, string | undefined> = {};
   for (const key of Object.keys(overrides)) {
     originals[key] = process.env[key];
