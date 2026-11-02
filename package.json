@@ -21,7 +21,8 @@
   "files": [
     "index.ts",
     "src",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
